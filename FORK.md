@@ -2,7 +2,7 @@
 
 Fork of [keeweb/kdbxweb](https://github.com/keeweb/kdbxweb) (MIT, see `LICENSE`) used by KeeNext.
 
-Base: upstream `master` at `7601e45d2a437f35a7fa3d767164eab60bc05d42` (2024-12-23, after release 2.1.1; adds the `DriveWindows` icon fix and build tooling). The repository history has the unmodified import as its own commit, so `git diff <import commit> -- packages/kdbxweb` shows every change listed here.
+Base: upstream `master` at `7601e45d2a437f35a7fa3d767164eab60bc05d42` (2024-12-23, after release 2.1.1; adds the `DriveWindows` icon fix and build tooling). The repository history has the unmodified import as its own commit, so `git diff <import commit> -- lib test` shows every change listed here.
 
 ## Changes to `lib/`
 
@@ -34,7 +34,7 @@ Base: upstream `master` at `7601e45d2a437f35a7fa3d767164eab60bc05d42` (2024-12-2
 
 ## Changes to `test/`
 
-- Run with Vitest (`npm test` in this folder) instead of mocha; `test/setup.ts` maps mocha's `before`/`after` and installs xmldom 0.9 as the DOM.
+- Run with Vitest (`npm test`) instead of mocha; `test/setup.ts` maps mocha's `before`/`after` and installs xmldom 0.9 as the DOM.
 - Tests of the removed Node fallbacks and the subtle mock are gone; `CryptoEngine.argon2` is set through `setArgon2Impl` (ES module exports are read-only).
 - Argon2 in tests uses hash-wasm instead of upstream's prebuilt emscripten blob.
 - Resources are read with `fs`; `KdbxUuid` byte assertions compare byte values.
@@ -45,7 +45,7 @@ Base: upstream `master` at `7601e45d2a437f35a7fa3d767164eab60bc05d42` (2024-12-2
 
 ## Build
 
-`npm run build` writes an ESM bundle to `dist/index.js` (for Node scripts) and type declarations to `dist/types`. The app bundles `lib/` from source.
+`npm run build` writes an ESM bundle to `dist/index.js` (for Node scripts) and type declarations to `dist/types`. KeeNext bundles `dist/index.js`.
 
 ## Notes for a security review
 
