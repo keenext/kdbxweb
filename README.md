@@ -2,6 +2,8 @@
 
 This is a fork of [keeweb/kdbxweb](https://github.com/keeweb/kdbxweb), published as `@keenext/kdbxweb` and maintained for KeeNext. What differs from upstream is listed in [FORK.md](FORK.md); everything below is upstream's documentation.
 
+The fork is used by KeeNext, which is alpha software. It has not been independently audited and is provided without warranty, see [LICENSE](LICENSE).
+
 KdbxWeb is a high-performance javascript library for reading/writing KeePass v2 databases (kdbx) in node.js or browser.
 
 <br />
