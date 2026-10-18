@@ -1,9 +1,0 @@
-*
-!dist/kdbxweb.js
-!dist/kdbxweb.min.js
-!dist/types/**/*.d.ts
-!LICENSE
-!README.md
-!release-notes.md
-!format/Kdbx.tcl
-!lib/**/*.ts
