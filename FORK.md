@@ -2,7 +2,7 @@
 
 Fork of [keeweb/kdbxweb](https://github.com/keeweb/kdbxweb) (MIT, see `LICENSE`) used by KeeNext.
 
-Base: upstream `master` at `7601e45d2a437f35a7fa3d767164eab60bc05d42` (2024-12-23, after release 2.1.1; adds the `DriveWindows` icon fix and build tooling). The repository history has the unmodified import as its own commit, so `git diff <import commit> -- lib test` shows every change listed here.
+Base: upstream `master` at `7601e45d2a437f35a7fa3d767164eab60bc05d42` (2024-12-23, after release 2.1.1; adds the `DriveWindows` icon fix and build tooling). The repository keeps upstream's history up to that commit, so `git diff 7601e45 -- lib test` shows every change listed here.
 
 ## Changes to `lib/`
 
