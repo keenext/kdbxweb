@@ -76,6 +76,10 @@ export function serialize(doc: Document, prettyPrint = false): string {
         prettyPrintXmlNode(doc, 0);
     }
     let xml = createXMLSerializer().serializeToString(doc);
+    // XML line-end normalization reads a raw CR LF back as LF; as a character reference
+    // the CR survives. The serializer and the pretty-printer only ever add LF, so every
+    // CR here belongs to a value.
+    xml = xml.replace(/\r/g, '&#13;');
     if (prettyPrint && xml.startsWith('<?')) {
         xml = xml.replace(/^(<\?.*?\?>)</, '$1\n<');
     }

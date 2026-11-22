@@ -54,7 +54,9 @@ export class KdbxCredentials {
         }
         if (keyFile) {
             if (keyFile.byteLength === 32) {
-                this.keyFileHash = ProtectedValue.fromBinary(arrayToBuffer(keyFile));
+                // fromBinary masks the buffer it gets; a copy keeps the caller's key file intact
+                const copy = new Uint8Array(keyFile).slice();
+                this.keyFileHash = ProtectedValue.fromBinary(arrayToBuffer(copy));
                 return Promise.resolve();
             }
             const hashWholeFile = () =>

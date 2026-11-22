@@ -378,6 +378,10 @@ export class KdbxEntry {
         if (!remoteEntry) {
             return;
         }
+        // the move time belongs to the place Kdbx.merge picked, not to the newer content
+        const place = objectMap.remotePlace.has(this.uuid.id) ? remoteEntry : this;
+        const { previousParentGroup } = place;
+        const { locationChanged } = place.times;
         const remoteHistory = remoteEntry.history.slice();
         if (this.lastModTime < remoteEntry.lastModTime) {
             // remote is more new; push current state to history and update
@@ -395,6 +399,8 @@ export class KdbxEntry {
             }
         }
         this.history = this.mergeHistory(remoteHistory, remoteEntry.lastModTime);
+        this.times.locationChanged = locationChanged;
+        this.previousParentGroup = previousParentGroup;
     }
 
     /**

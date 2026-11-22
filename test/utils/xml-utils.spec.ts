@@ -100,6 +100,13 @@ describe('XmlUtils', () => {
             expect(xml).to.be('<root><item><cd>123</cd><e/></item></root>');
         });
 
+        it('writes carriage returns as character references', () => {
+            const doc = XmlUtils.parse('<root>a&#13;\nb\nc</root>');
+            const xml = XmlUtils.serialize(doc);
+            expect(xml).to.be('<root>a&#13;\nb\nc</root>');
+            expect(XmlUtils.parse(xml).documentElement.textContent).to.be('a\r\nb\nc');
+        });
+
         it('pretty prints XML document', () => {
             const doc = XmlUtils.parse('<root><item><cd>123</cd><e></e></item></root>');
             const xml = XmlUtils.serialize(doc, true);

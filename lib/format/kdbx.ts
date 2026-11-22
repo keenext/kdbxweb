@@ -25,6 +25,8 @@ export interface MergeObjectMap {
     remoteEntries: Map<string, KdbxEntry>;
     remoteGroups: Map<string, KdbxGroup>;
     deleted: Map<string, Date>;
+    /** Local objects that go where the remote side has them (see Kdbx.remotePlaces) */
+    remotePlace: Set<string>;
 }
 
 export class Kdbx {
@@ -205,6 +207,13 @@ export class Kdbx {
         toGroup: KdbxGroup | undefined | null,
         atIndex?: number
     ): void {
+        // A group moved into its own subtree is cut off from the root and lost on saving,
+        // e.g. remove() on a group that holds the recycle bin.
+        for (let g = toGroup; g && object instanceof KdbxGroup; g = g.parentGroup) {
+            if (g === object) {
+                throw new KdbxError(ErrorCodes.InvalidArg, 'cannot move a group into itself');
+            }
+        }
         const containerProp = object instanceof KdbxGroup ? 'groups' : 'entries';
         const fromContainer = <T[]>object.parentGroup?.[containerProp];
         const ix = fromContainer?.indexOf(object);
@@ -419,9 +428,13 @@ export class Kdbx {
         }
 
         const objectMap = this.getObjectMap();
+        // One tombstone per object; the later deletion counts, as in KeePass 2.
         for (const rem of remote.deletedObjects) {
-            if (rem.uuid && rem.deletionTime && !objectMap.deleted.has(rem.uuid.id)) {
-                this.deletedObjects.push(rem);
+            if (!rem.uuid || !rem.deletionTime) {
+                continue;
+            }
+            const local = objectMap.deleted.get(rem.uuid.id);
+            if (!local || rem.deletionTime > local) {
                 objectMap.deleted.set(rem.uuid.id, rem.deletionTime);
             }
         }
@@ -434,11 +447,183 @@ export class Kdbx {
         const remoteObjectMap = remote.getObjectMap();
         objectMap.remoteEntries = remoteObjectMap.entries;
         objectMap.remoteGroups = remoteObjectMap.groups;
+        objectMap.remotePlace = Kdbx.remotePlaces(objectMap);
 
         this.meta.merge(remote.meta, objectMap);
         root.merge(objectMap);
+        this.applyDeletions(root, objectMap.deleted);
+        this.applyCustomIconDeletions(objectMap.deleted);
+        this.deletedObjects = [...objectMap.deleted].map(([id, time]) => {
+            const deletedObject = new KdbxDeletedObject();
+            deletedObject.uuid = new KdbxUuid(id);
+            deletedObject.deletionTime = time;
+            return deletedObject;
+        });
 
-        this.cleanup({ historyRules: true, customIcons: true, binaries: true });
+        // No custom icon cleanup: an icon unused right now may still be wanted by the other
+        // side or kept as part of an icon collection. KeePass 2 and KeePassXC keep them too.
+        this.cleanup({ historyRules: true, binaries: true });
+    }
+
+    /**
+     * Ids of the local objects that go where the remote side has them, i.e. were moved
+     * there later. Decided from the move times before merging: entry and group merges
+     * copy the newer side's times, possibly before the group the object left is merged,
+     * which then kept it as well (one object in two groups).
+     * Groups the two sides moved into each other would form a loop unreachable from the
+     * root; then the group whose place is older goes where the other side has it, which
+     * both sides agree on.
+     */
+    private static remotePlaces(objectMap: MergeObjectMap): Set<string> {
+        const remotePlace = new Set<string>();
+        const compare = <T extends KdbxEntry | KdbxGroup>(
+            local: Map<string, T>,
+            remote: Map<string, T>
+        ) => {
+            for (const [id, item] of local) {
+                const remoteItem = remote.get(id);
+                if (remoteItem && remoteItem.locationChanged > item.locationChanged) {
+                    remotePlace.add(id);
+                }
+            }
+        };
+        compare(objectMap.entries, objectMap.remoteEntries);
+        compare(objectMap.groups, objectMap.remoteGroups);
+
+        const parentId = (id: string): string | undefined => {
+            const local = objectMap.groups.get(id);
+            const group = local && !remotePlace.has(id) ? local : objectMap.remoteGroups.get(id);
+            return group?.parentGroup?.uuid.id;
+        };
+        const placed = (id: string) =>
+            Math.max(
+                objectMap.groups.get(id)?.locationChanged ?? 0,
+                objectMap.remoteGroups.get(id)?.locationChanged ?? 0
+            );
+        const flipped = new Set<string>();
+        for (
+            let loop = Kdbx.findLoop(objectMap.groups.keys(), parentId);
+            loop;
+            loop = Kdbx.findLoop(objectMap.groups.keys(), parentId)
+        ) {
+            const both = loop.filter(
+                (id) => objectMap.groups.has(id) && objectMap.remoteGroups.has(id)
+            );
+            const candidates = both.filter((id) => !flipped.has(id));
+            if (!candidates.length) {
+                // every group of the loop was flipped once: back to the local tree
+                both.forEach((id) => remotePlace.delete(id));
+                continue;
+            }
+            const oldest = candidates.reduce((x, y) =>
+                placed(y) < placed(x) || (placed(y) === placed(x) && y < x) ? y : x
+            );
+            if (!remotePlace.delete(oldest)) {
+                remotePlace.add(oldest);
+            }
+            flipped.add(oldest);
+        }
+        return remotePlace;
+    }
+
+    /** Ids forming a loop in the parent relation, or undefined if every group reaches the root */
+    private static findLoop(
+        ids: Iterable<string>,
+        parentId: (id: string) => string | undefined
+    ): string[] | undefined {
+        const reachesRoot = new Set<string>();
+        for (const start of ids) {
+            const path: string[] = [];
+            let id: string | undefined = start;
+            while (id !== undefined && !reachesRoot.has(id) && !path.includes(id)) {
+                path.push(id);
+                id = parentId(id);
+            }
+            if (id !== undefined && !reachesRoot.has(id)) {
+                return path.slice(path.indexOf(id));
+            }
+            path.forEach((x) => reachesRoot.add(x));
+        }
+        return undefined;
+    }
+
+    /**
+     * Applies the merged tombstones to the merged tree, children first. As in KeePass 2,
+     * an object only goes if it was not changed after its deletion, and a group only once
+     * it is empty; a move counts as a change (restoring from the recycle bin is one).
+     * Whatever stays loses its tombstone, so the next merge does not delete it after all.
+     */
+    private applyDeletions(group: KdbxGroup, deleted: Map<string, Date>): void {
+        for (const subGroup of group.groups) {
+            this.applyDeletions(subGroup, deleted);
+        }
+        const stays = (item: KdbxEntry | KdbxGroup): boolean => {
+            const deletionTime = deleted.get(item.uuid.id);
+            if (!deletionTime) {
+                return true;
+            }
+            const notEmpty =
+                item instanceof KdbxGroup && (item.entries.length > 0 || item.groups.length > 0);
+            if (
+                notEmpty ||
+                Kdbx.changedAfter(item.times.lastModTime, deletionTime) ||
+                Kdbx.changedAfter(item.times.locationChanged, deletionTime)
+            ) {
+                deleted.delete(item.uuid.id);
+                return true;
+            }
+            return false;
+        };
+        group.entries = group.entries.filter(stays);
+        group.groups = group.groups.filter(stays);
+    }
+
+    /**
+     * Tombstones of custom icons. An icon stays if it, or an entry or group using it, was
+     * changed after the deletion (KDBX 4.0 has no icon times); otherwise it goes and
+     * whatever still points to it, history included, falls back to its standard icon.
+     */
+    private applyCustomIconDeletions(deleted: Map<string, Date>): void {
+        const lastUse = new Map<string, Date>();
+        for (const item of this.getDefaultGroup().allGroupsAndEntries()) {
+            const id = item.customIcon?.id;
+            const time = item.times.lastModTime;
+            const known = id ? lastUse.get(id) : undefined;
+            if (id && time && (!known || time > known)) {
+                lastUse.set(id, time);
+            }
+        }
+        for (const [id, icon] of [...this.meta.customIcons]) {
+            const deletionTime = deleted.get(id);
+            if (!deletionTime) {
+                continue;
+            }
+            if (
+                Kdbx.changedAfter(icon.lastModified, deletionTime) ||
+                Kdbx.changedAfter(lastUse.get(id), deletionTime)
+            ) {
+                deleted.delete(id);
+            } else {
+                this.meta.customIcons.delete(id);
+            }
+        }
+        for (const item of this.getDefaultGroup().allGroupsAndEntries()) {
+            const states = item instanceof KdbxEntry ? [item, ...item.history] : [item];
+            for (const state of states) {
+                const id = state.customIcon?.id;
+                if (id && deleted.has(id) && !this.meta.customIcons.has(id)) {
+                    state.customIcon = undefined;
+                }
+            }
+        }
+    }
+
+    /** KDBX stores whole seconds; comparing those keeps in-memory and loaded times equal. */
+    private static changedAfter(time: Date | undefined, deletionTime: Date): boolean {
+        return (
+            !!time &&
+            Math.floor(time.getTime() / 1000) > Math.floor(deletionTime.getTime() / 1000)
+        );
     }
 
     /**
@@ -523,7 +708,8 @@ export class Kdbx {
             groups: new Map<string, KdbxGroup>(),
             remoteEntries: new Map<string, KdbxEntry>(),
             remoteGroups: new Map<string, KdbxGroup>(),
-            deleted: new Map<string, Date>()
+            deleted: new Map<string, Date>(),
+            remotePlace: new Set<string>()
         };
         for (const item of this.getDefaultGroup().allGroupsAndEntries()) {
             if (objectMap.entries.has(item.uuid.id)) {

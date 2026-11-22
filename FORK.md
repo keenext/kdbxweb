@@ -4,6 +4,10 @@ Fork of [keeweb/kdbxweb](https://github.com/keeweb/kdbxweb) (MIT, see `LICENSE`)
 
 Base: upstream `master` at `7601e45d2a437f35a7fa3d767164eab60bc05d42` (2024-12-23, after release 2.1.1; adds the `DriveWindows` icon fix and build tooling). The repository keeps upstream's history up to that commit, so `git diff 7601e45 -- lib test` shows every change listed here.
 
+## Versions
+
+Upstream is no longer maintained, so the fork is versioned on its own with [Semantic Versioning](https://semver.org/), starting at 3.0.0: a major version for changes that break callers or change how files are read, written or merged, a minor version for additions, a patch version for fixes. Releases are tagged `vX.Y.Z` and described in [CHANGELOG.md](CHANGELOG.md). The versions `2.2.0-keenext.N` on npm are earlier releases of this fork.
+
 ## Changes to `lib/`
 
 | Change | Files | Why |
@@ -33,6 +37,14 @@ Base: upstream `master` at `7601e45d2a437f35a7fa3d767164eab60bc05d42` (2024-12-2
 | AES-KDF runs its chunks one after another instead of building the whole promise chain up front | `crypto/key-encryptor-aes.ts` | Upstream allocates one promise per 10,000 rounds before the first one runs, so a file with 2^50 rounds freezes the page. |
 | `KdbxEntry.copyFrom` also copies custom data, quality check and previous parent group; `KdbxGroup.copyFrom` also copies tags, custom data and previous parent group; `importEntry` clears the previous parent group | `format/kdbx-entry.ts`, `format/kdbx-group.ts`, `format/kdbx-custom-data.ts`, `format/kdbx.ts` | Merge, history snapshots and `importEntry` copy through `copyFrom`; upstream loses these properties there, e.g. KeePassXC's browser settings in entry custom data on every sync merge. |
 
+| `Kdbx.merge` decides before merging which objects go where the remote side has them (moved there later, `Kdbx.remotePlaces`); each object keeps the move time of the place it ends up in. A group only one side has is merged as well. Groups the two sides moved into each other are untangled: the one whose place is older goes to its place on the other side | `format/kdbx.ts`, `format/kdbx-group.ts`, `format/kdbx-entry.ts` | Upstream compares move times group by group after the entry merge already copied the newer side's times: an entry moved and changed on the other side ended up in two groups, was saved twice, and every later merge failed with `duplicate`. Changes to entries inside a group only one side had were dropped. |
+| Tombstones of both sides are merged (one per object, the later time) and applied after merging, children first: an object only goes if it was not changed or moved after its deletion, a group only once it is empty; whatever stays loses its tombstone. Custom icons the same way, against the icon's own time and the latest change of an entry or group using it | `format/kdbx.ts`, `format/kdbx-group.ts`, `format/kdbx-meta.ts` | Upstream skips every object with a tombstone before comparing times: an entry deleted for good on one device and changed later on the other was lost. KeePass 2 synchronizes the same way. |
+| `merge` no longer purges unused custom icons | `format/kdbx.ts` | Upstream ends with `cleanup({ customIcons: true })`, deleting icons unused at that moment (including the other side's) and writing tombstones for them. KeePass 2 and KeePassXC keep them. |
+| `Kdbx.move` refuses to put a group into itself or its subtree (`InvalidArg`) | `format/kdbx.ts` | Such a group is cut off from the root and lost on saving with everything in it, e.g. `remove()` on a group holding the recycle bin. |
+| `XmlUtils.serialize` writes CR as `&#13;` | `utils/xml-utils.ts` | XML line-end normalization reads a raw CR LF back as LF, so values with CR LF (Windows tools, pykeepass) lost the CR on the first save. |
+| Missing group `IconID`, `IsExpanded`, `EnableAutoType`, `EnableSearching` and meta `RecycleBinEnabled` are written with KeePass' defaults (folder icon, expanded, inherit, inherit, on) | `format/kdbx-group.ts`, `format/kdbx-meta.ts` | Upstream writes empty elements: KeePassXC refuses to open the file ("invalid EnableSearching value") and reads an empty `RecycleBinEnabled` as off. |
+| A 32-byte key file is copied before it is masked | `format/kdbx-credentials.ts` | `ProtectedValue.fromBinary` masks the buffer it gets; upstream passed the caller's own, so the next credentials made from it used a different key. |
+
 ## Changes to `test/`
 
 - Run with Vitest (`npm test`) instead of mocha; `test/setup.ts` maps mocha's `before`/`after` and installs xmldom 0.9 as the DOM.
@@ -40,7 +52,7 @@ Base: upstream `master` at `7601e45d2a437f35a7fa3d767164eab60bc05d42` (2024-12-2
 - Argon2 in tests uses hash-wasm instead of upstream's prebuilt emscripten blob.
 - Resources are read with `fs`; `KdbxUuid` byte assertions compare byte values.
 - New: `test/crypto/twofish.spec.ts` (known-answer tests from the Twofish submission, CBC round trips, wrong-key handling). Interoperability with KeePassXC is covered by the app's `tests/compat` (files written by KeePassXC with Twofish, and files written here, opened by KeePassXC).
-- Each `lib/` change in the table above that changes behaviour has a regression test next to the tests of the file it changes; `kdbx.spec.ts` covers the ones that need a save and load (attachments, tabs, KDBX 4.1 times and values, IV length, import, abort, zeroed keys after a wrong password), `kdbx.merge.spec.ts` the merge of custom data and tags. The `WeakMap` and fflate changes are covered by the existing suite. The app's `tests/compat` checks the KDBX 4.1 values and the hashed key files against KeePassXC.
+- Each `lib/` change in the table above that changes behaviour has a regression test next to the tests of the file it changes; `kdbx.spec.ts` covers the ones that need a save and load (attachments, tabs, KDBX 4.1 times and values, IV length, import, abort, zeroed keys after a wrong password), `kdbx.merge.spec.ts` the merge of custom data and tags, `kdbx.merge-sync.spec.ts` moves, deletions and custom icons between two copies of one file. The `WeakMap` and fflate changes are covered by the existing suite. The app's `tests/compat` checks the KDBX 4.1 values and the hashed key files against KeePassXC.
 - `kdbx-entry.spec.ts` and `kdbx-group.spec.ts` check that `copyFrom` copies every own property of a fresh instance except an explicit list; a property added to the class fails there until the test populates it.
 - Two upstream tests expected the lenient `BinaryStream`: `binary-stream.spec.ts` reads zero bytes at the end instead of five, and the bad-compression test in `kdbx-header.spec.ts` uses a complete 4-byte field.
 
@@ -54,4 +66,4 @@ Base: upstream `master` at `7601e45d2a437f35a7fa3d767164eab60bc05d42` (2024-12-2
 - Key handling: `format/kdbx-credentials.ts`, `crypto/key-encryptor-*.ts`, `crypto/protected-value.ts` (XOR-masked in-memory values, not encryption).
 - Integrity: KDBX 4 header HMAC and HMAC block stream (`crypto/hmac-block-transform.ts`); KDBX 3 relies on stream start bytes and the hashed block stream.
 - KDF parameters (AES-KDF rounds, Argon2 memory, iterations, parallelism) come from the file without upper bounds and run before the key can be verified. The library offers cancellation (`signal`); limits belong to the application (KeeNext: `core/database.ts`, `DEFAULT_KDF_LIMITS`).
-- Logic as in upstream and worth reviewing first: the XML handling of protected values (`XmlUtils.setProtectedValues`, `updateProtectedValuesSalt`, `getProtectedText`), the ChaCha20/Salsa20 implementations, the CRDT logic of `merge` (`KdbxGroup.mergeCollection`, `KdbxEntry.mergeHistory`).
+- Logic as in upstream and worth reviewing first: the XML handling of protected values (`XmlUtils.setProtectedValues`, `updateProtectedValuesSalt`, `getProtectedText`), the ChaCha20/Salsa20 implementations, the history merge (`KdbxEntry.mergeHistory`). The placement and tombstone logic of `merge` (`Kdbx.remotePlaces`, `applyDeletions`, `applyCustomIconDeletions`, `KdbxGroup.mergeCollection`) is the fork's own.

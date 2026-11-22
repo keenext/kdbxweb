@@ -34,6 +34,17 @@ describe('KdbxCredentials', () => {
         );
     });
 
+    it('leaves a 32-byte key file passed in unchanged', async () => {
+        for (const keyFile of [new Uint8Array(32).fill(1), new Uint8Array(32).fill(1).buffer]) {
+            const first = new KdbxCredentials(null, keyFile);
+            const second = new KdbxCredentials(null, keyFile);
+            expect([...new Uint8Array(keyFile)]).to.eql(new Array(32).fill(1));
+            expect(ByteUtils.bytesToHex(await second.getHash())).to.be(
+                ByteUtils.bytesToHex(await first.getHash())
+            );
+        }
+    });
+
     it('calculates hash for test password and a key file', async () => {
         const cred = new KdbxCredentials(
             ProtectedValue.fromString('test'),
