@@ -4,6 +4,10 @@ Fork of [keeweb/kdbxweb](https://github.com/keeweb/kdbxweb) (MIT, see `LICENSE`)
 
 Base: upstream `master` at `7601e45d2a437f35a7fa3d767164eab60bc05d42` (2024-12-23, after release 2.1.1; adds the `DriveWindows` icon fix and build tooling). The repository keeps upstream's history up to that commit, so `git diff 7601e45 -- lib test` shows every change listed here.
 
+## Versions
+
+Upstream is no longer maintained, so the fork is versioned on its own with [Semantic Versioning](https://semver.org/), starting at 3.0.0: a major version for changes that break callers or change how files are read, written or merged, a minor version for additions, a patch version for fixes. Releases are tagged `vX.Y.Z` and described in [CHANGELOG.md](CHANGELOG.md). The versions `2.2.0-keenext.N` on npm are earlier releases of this fork.
+
 ## Changes to `lib/`
 
 | Change | Files | Why |

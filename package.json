@@ -1,6 +1,6 @@
 {
   "name": "@keenext/kdbxweb",
-  "version": "2.2.0-keenext.3",
+  "version": "3.0.0",
   "description": "Fork of keeweb/kdbxweb maintained for KeeNext, see FORK.md",
   "license": "MIT",
   "repository": {
@@ -25,7 +25,8 @@
   "files": [
     "dist",
     "LICENSE",
-    "FORK.md"
+    "FORK.md",
+    "CHANGELOG.md"
   ],
   "scripts": {
     "build": "esbuild lib/index.ts --bundle --format=esm --platform=neutral --target=es2022 --external:fflate --sourcemap --outfile=dist/index.js && tsc -p tsconfig.json",
