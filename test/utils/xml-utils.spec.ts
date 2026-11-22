@@ -269,6 +269,16 @@ describe('XmlUtils', () => {
             const tags = XmlUtils.getTags(xml.documentElement);
             expect(tags).to.eql([]);
         });
+
+        it('splits tags with long runs of whitespace in linear time', () => {
+            const spaces = ' '.repeat(100000);
+            const xml = XmlUtils.parse(`<item>a${spaces}b${spaces},${spaces}c</item>`);
+            // Measured, because a test timeout cannot interrupt a synchronous split.
+            const start = performance.now();
+            const tags = XmlUtils.getTags(xml.documentElement);
+            expect(performance.now() - start).to.be.below(1000);
+            expect(tags).to.eql([`a${spaces}b`, 'c']);
+        });
     });
 
     describe('setTags', () => {

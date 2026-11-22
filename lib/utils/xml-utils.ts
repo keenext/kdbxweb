@@ -13,7 +13,8 @@ const DateRegex = /\.\d\d\d/;
 const EpochSeconds = 62135596800;
 // The latest date .NET (KeePass) can represent; also within the range of Date.
 const LatestDateMs = Date.UTC(9999, 11, 31, 23, 59, 59);
-const TagsSplitRegex = /\s*[;,:]\s*/;
+// Whitespace around separators is trimmed after splitting: matching it here takes quadratic time on long runs of it.
+const TagsSplitRegex = /[;,:]/;
 
 // Values of nodes marked Protected="True", held beside the DOM rather than on its nodes.
 const protectedValues = new WeakMap<Node, ProtectedValue>();
