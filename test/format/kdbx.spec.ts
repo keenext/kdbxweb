@@ -1148,6 +1148,38 @@ describe('Kdbx', () => {
         expect(loaded.getDefaultGroup().entries[0].fields.get('Notes')).to.be('col1\tcol2');
     });
 
+    it('keeps CR LF in fields', async () => {
+        const cred = new kdbxweb.Credentials(kdbxweb.ProtectedValue.fromString('test'));
+        const db = kdbxweb.Kdbx.create(cred, 'example');
+        const entry = db.createEntry(db.getDefaultGroup());
+        entry.fields.set('Notes', 'line1\r\nline2\nline3');
+
+        const loaded = await kdbxweb.Kdbx.load(await db.save(), cred);
+        expect(loaded.getDefaultGroup().entries[0].fields.get('Notes')).to.be(
+            'line1\r\nline2\nline3'
+        );
+    });
+
+    it('writes settings missing in the source file with KeePass defaults', async () => {
+        const cred = new kdbxweb.Credentials(kdbxweb.ProtectedValue.fromString('test'));
+        const db = kdbxweb.Kdbx.create(cred, 'example');
+        // as read from a file without these elements
+        (db.meta as unknown as { _recycleBinEnabled: unknown })._recycleBinEnabled = undefined;
+        const group = db.createGroup(db.getDefaultGroup(), 'bare');
+        group.icon = undefined;
+        group.expanded = undefined;
+        group.enableAutoType = undefined;
+        group.enableSearching = undefined;
+
+        const xml = await db.saveXml();
+        expect(xml).to.contain('<RecycleBinEnabled>True</RecycleBinEnabled>');
+        const bare = xml.slice(xml.indexOf('<Name>bare</Name>'));
+        expect(bare).to.contain('<IconID>48</IconID>');
+        expect(bare).to.contain('<IsExpanded>True</IsExpanded>');
+        expect(bare).to.contain('<EnableAutoType>null</EnableAutoType>');
+        expect(bare).to.contain('<EnableSearching>null</EnableSearching>');
+    });
+
     describe('KDBX 4.1 values', () => {
         const cred = () => new kdbxweb.Credentials(kdbxweb.ProtectedValue.fromString('test'));
         const time = new Date('2024-01-01T00:00:00Z');

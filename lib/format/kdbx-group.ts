@@ -93,7 +93,9 @@ export class KdbxGroup {
         XmlUtils.setUuid(XmlUtils.addChildNode(node, XmlNames.Elem.Uuid), this.uuid);
         XmlUtils.setText(XmlUtils.addChildNode(node, XmlNames.Elem.Name), this.name);
         XmlUtils.setText(XmlUtils.addChildNode(node, XmlNames.Elem.Notes), this.notes);
-        XmlUtils.setNumber(XmlUtils.addChildNode(node, XmlNames.Elem.Icon), this.icon);
+        // Fields missing in the source file are written with KeePass' defaults: KeePassXC
+        // rejects empty IconID, IsExpanded, EnableAutoType and EnableSearching elements.
+        XmlUtils.setNumber(XmlUtils.addChildNode(node, XmlNames.Elem.Icon), this.icon ?? Icons.Folder);
         if (this.tags.length && ctx.kdbx.versionIsAtLeast(4, 1)) {
             XmlUtils.setTags(XmlUtils.addChildNode(node, XmlNames.Elem.Tags), this.tags);
         }
@@ -113,18 +115,21 @@ export class KdbxGroup {
             KdbxCustomData.write(node, ctx, this.customData);
         }
         this.times.write(node, ctx);
-        XmlUtils.setBoolean(XmlUtils.addChildNode(node, XmlNames.Elem.IsExpanded), this.expanded);
+        XmlUtils.setBoolean(
+            XmlUtils.addChildNode(node, XmlNames.Elem.IsExpanded),
+            this.expanded ?? true
+        );
         XmlUtils.setText(
             XmlUtils.addChildNode(node, XmlNames.Elem.GroupDefaultAutoTypeSeq),
             this.defaultAutoTypeSeq
         );
         XmlUtils.setBoolean(
             XmlUtils.addChildNode(node, XmlNames.Elem.EnableAutoType),
-            this.enableAutoType
+            this.enableAutoType ?? null
         );
         XmlUtils.setBoolean(
             XmlUtils.addChildNode(node, XmlNames.Elem.EnableSearching),
-            this.enableSearching
+            this.enableSearching ?? null
         );
         XmlUtils.setUuid(
             XmlUtils.addChildNode(node, XmlNames.Elem.LastTopVisibleEntry),
@@ -169,25 +174,30 @@ export class KdbxGroup {
 
     merge(objectMap: MergeObjectMap): void {
         const remoteGroup = objectMap.remoteGroups.get(this.uuid.id);
-        if (!remoteGroup) {
-            return;
+        if (remoteGroup) {
+            // the move time belongs to the place Kdbx.merge picked, not to the newer content
+            const place = objectMap.remotePlace.has(this.uuid.id) ? remoteGroup : this;
+            const { previousParentGroup } = place;
+            const { locationChanged } = place.times;
+            if (remoteGroup.lastModTime > this.lastModTime) {
+                this.copyFrom(remoteGroup);
+            }
+            this.times.locationChanged = locationChanged;
+            this.previousParentGroup = previousParentGroup;
         }
-        if (remoteGroup.lastModTime > this.lastModTime) {
-            this.copyFrom(remoteGroup);
-        }
+        // A group only this side has is merged too: the other side may have changed or
+        // moved what is in it.
         this.groups = this.mergeCollection(
             this.groups,
-            remoteGroup.groups,
+            remoteGroup?.groups ?? [],
             objectMap.groups,
-            objectMap.remoteGroups,
-            objectMap.deleted
+            objectMap.remotePlace
         );
         this.entries = this.mergeCollection(
             this.entries,
-            remoteGroup.entries,
+            remoteGroup?.entries ?? [],
             objectMap.entries,
-            objectMap.remoteEntries,
-            objectMap.deleted
+            objectMap.remotePlace
         );
         for (const group of this.groups) {
             group.merge(objectMap);
@@ -198,38 +208,32 @@ export class KdbxGroup {
     }
 
     /**
-     * Merge object collection with remote collection
-     * Implements 2P-set CRDT with tombstones stored in objectMap.deleted
-     * Assumes tombstones are already merged
+     * Merge object collection with remote collection.
+     * Deleted objects are merged like the others; Kdbx.merge applies the tombstones
+     * afterwards against the merged times. Where each object goes was decided up front
+     * (objectMap.remotePlace), so every object ends up in exactly one group.
      */
     private mergeCollection<T extends KdbxGroup | KdbxEntry>(
         collection: T[],
         remoteCollection: T[],
         objectMapItems: Map<string, T>,
-        remoteObjectMapItems: Map<string, T>,
-        deletedObjects: Map<string, Date>
+        remotePlace: Set<string>
     ): T[] {
         const newItems: T[] = [];
         for (const item of collection) {
-            if (!item.uuid || deletedObjects.has(item.uuid.id)) {
-                continue; // item deleted
-            }
-            const remoteItem = remoteObjectMapItems.get(item.uuid.id);
-            if (!remoteItem) {
-                newItems.push(item); // item added locally
-            } else if (remoteItem.locationChanged <= item.locationChanged) {
-                newItems.push(item); // item not changed or moved to this group locally later than remote
+            if (item.uuid && !remotePlace.has(item.uuid.id)) {
+                newItems.push(item); // added or moved here locally, or not moved
             }
         }
         let ix = -1;
         for (const remoteItem of remoteCollection) {
             ix++;
-            if (!remoteItem.uuid || deletedObjects.has(remoteItem.uuid.id)) {
-                continue; // item already processed as local item or deleted
+            if (!remoteItem.uuid) {
+                continue;
             }
             const item = objectMapItems.get(remoteItem.uuid.id);
 
-            if (item && remoteItem.locationChanged > item.locationChanged) {
+            if (item && remotePlace.has(item.uuid.id)) {
                 item.parentGroup = this; // item moved to this group remotely later than local
                 newItems.splice(KdbxGroup.findInsertIx(newItems, remoteCollection, ix), 0, item);
             } else if (!item) {

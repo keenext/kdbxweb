@@ -244,7 +244,9 @@ describe('Kdbx.merge', () => {
         const d1 = new Date();
         d1.setSeconds(-1);
         const d2 = new Date();
+        // icon1 is used by nothing; merging keeps it all the same
         const customIcons = new Map<string, kdbxweb.KdbxCustomIcon>([
+            [id.icon1.id, { data: bin.icon1 }],
             [id.icon2.id, { data: bin.icon2 }],
             [id.bin1.id, { data: bin.bin1 }],
             [id.bin3.id, { data: bin.bin3, name: 'i3', lastModified: d1 }],
