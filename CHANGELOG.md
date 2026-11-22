@@ -2,7 +2,7 @@
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), the versions [Semantic Versioning](https://semver.org/) (see [FORK.md](FORK.md#versions)). Everything that differs from upstream kdbxweb is listed in [FORK.md](FORK.md).
 
-## 3.0.0 – unreleased
+## 3.0.0 – 2026-11-22
 
 Breaking for callers that rely on upstream's merge results or on `move` accepting any target.
 
